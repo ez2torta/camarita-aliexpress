@@ -1,4 +1,4 @@
-en mi red tengo una camara de estas características. es probable que su ip sea 192.168.1.26 o algo similar.
+en mi red tengo una camara de estas características. es probable que su ip sea 192.168.0.26 o algo similar.
 
 Claro, te preparo un **prompt estructurado** para que puedas usarlo con un asistente de IA o una herramienta de configuración y obtener directamente la cadena de conexión RTSP para tu cámara **CYCAM T99 v32 0226**.
 
@@ -33,14 +33,14 @@ Aunque el prompt está pensado para que la IA lo resuelva, los resultados de bú
 
 - La ruta RTSP más común para las cámaras CYCAM es **`/live/0/onvif.sdp`**.
 - La URL típica de ejemplo es:  
-  **`rtsp://admin:admin@192.168.1.188:554/live/0/onvif.sdp`**.
+  **`rtsp://admin:admin@192.168.0.188:554/live/0/onvif.sdp`**.
 - Otra fuente confirma que el **puerto por defecto es 554** y la ruta suele ser `/live/0/onvif.sdp`.
 - Como credenciales por defecto, se ha reportado **`admin`** (sin contraseña o con `admin`) y también contraseñas numéricas como **`1212`** o **`1313`** en algunos modelos genéricos.
 
 Con el prompt anterior, la IA debería devolverte una URL como la siguiente (sustituyendo la IP por la que tenga tu cámara en tu red):
 
 ```
-rtsp://admin:admin@192.168.1.188:554/live/0/onvif.sdp
+rtsp://admin:admin@192.168.0.188:554/live/0/onvif.sdp
 ```
 
 Si al probar esa URL no funciona, el prompt también le pedirá que te dé **rutas alternativas** (por ejemplo, `/live/0/h264.sdp` o `/live_mpeg4.sdp`) para que puedas ir descartando hasta dar con la correcta.

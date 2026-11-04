@@ -6,11 +6,11 @@ camarita.py - Descubridor y conector RTSP para camaras IP baratas (CYCAM T99, V3
 Uso:
     python3 camarita.py scan                  # busca camaras en la red local
     python3 camarita.py scan 192.168.0 10.0.0  # varias subredes a la vez
-    python3 camarita.py probe 192.168.1.26    # prueba rutas y credenciales en una IP
+    python3 camarita.py probe 192.168.0.26    # prueba rutas y credenciales en una IP
     python3 camarita.py auto                  # scan + probe + abre VLC si encuentra algo
-    python3 camarita.py esperar 192.168.1.26  # reintenta hasta que aparezca el RTSP
-    python3 camarita.py vigilar 192.168.1.26  # ver si una IP responde (para identificarla)
-    python3 camarita.py puertos 192.168.1.26  # ver si la camara abre algun puerto
+    python3 camarita.py esperar 192.168.0.26  # reintenta hasta que aparezca el RTSP
+    python3 camarita.py vigilar 192.168.0.26  # ver si una IP responde (para identificarla)
+    python3 camarita.py puertos 192.168.0.26  # ver si la camara abre algun puerto
     python3 camarita.py open "rtsp://..."     # abre una URL concreta en VLC
     python3 camarita.py foto "rtsp://..." f.jpg   # guarda un frame de prueba
 
@@ -528,21 +528,21 @@ def main():
         cmd_scan(sys.argv[2] if len(sys.argv) > 2 else None)
     elif cmd == "probe":
         if len(sys.argv) < 3:
-            print("Falta la IP. Ej: python3 camarita.py probe 192.168.1.26")
+            print("Falta la IP. Ej: python3 camarita.py probe 192.168.0.26")
             return 1
         cmd_probe(sys.argv[2])
     elif cmd == "auto":
         cmd_auto()
     elif cmd == "esperar":
-        return cmd_esperar(sys.argv[2] if len(sys.argv) > 2 else "192.168.1.26")
+        return cmd_esperar(sys.argv[2] if len(sys.argv) > 2 else "192.168.0.26")
     elif cmd == "vigilar":
-        return cmd_vigilar(sys.argv[2] if len(sys.argv) > 2 else "192.168.1.26")
+        return cmd_vigilar(sys.argv[2] if len(sys.argv) > 2 else "192.168.0.26")
     elif cmd == "puertos":
-        return cmd_puertos(sys.argv[2] if len(sys.argv) > 2 else "192.168.1.26",
+        return cmd_puertos(sys.argv[2] if len(sys.argv) > 2 else "192.168.0.26",
                            int(sys.argv[3]) if len(sys.argv) > 3 else 180)
     elif cmd == "open":
         if len(sys.argv) < 3:
-            print('Falta la URL. Ej: python3 camarita.py open "rtsp://admin:admin@192.168.1.26:554/live/0/onvif.sdp"')
+            print('Falta la URL. Ej: python3 camarita.py open "rtsp://admin:admin@192.168.0.26:554/live/0/onvif.sdp"')
             return 1
         return cmd_open(sys.argv[2])
     elif cmd == "foto":

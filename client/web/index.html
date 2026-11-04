@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<title>Camarita</title>
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#14181d; --line:#242a31; --fg:#e6e9ec; --dim:#8b949e;
+    --ok:#2ecc71; --warn:#f0b429; --bad:#e74c3c; --accent:#4c9aff;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+  header{
+    display:flex;align-items:center;gap:10px;padding:10px 14px;
+    background:var(--panel);border-bottom:1px solid var(--line);flex:none;
+  }
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--dim);flex:none;
+       transition:background .3s;box-shadow:0 0 0 3px transparent}
+  .dot.ok{background:var(--ok);box-shadow:0 0 0 3px rgba(46,204,113,.15);animation:pulse 2.4s infinite}
+  .dot.warn{background:var(--warn)}
+  .dot.bad{background:var(--bad)}
+  @keyframes pulse{50%{opacity:.45}}
+  h1{font-size:14px;font-weight:600;margin:0;letter-spacing:.2px}
+  h1 span{color:var(--dim);font-weight:400}
+  .spacer{flex:1}
+  .meta{color:var(--dim);font-variant-numeric:tabular-nums;font-size:12px;text-align:right;line-height:1.35}
+  main{position:relative;flex:1;background:#000;display:flex;align-items:center;justify-content:center;min-height:0}
+  #video{max-width:100%;max-height:100%;width:100%;height:100%;object-fit:contain;display:block}
+  #overlay{
+    position:absolute;inset:0;display:none;flex-direction:column;gap:8px;
+    align-items:center;justify-content:center;text-align:center;padding:24px;
+    background:radial-gradient(circle at 50% 40%,#151a20,#000 70%);
+  }
+  #overlay.on{display:flex}
+  #overlay strong{font-size:15px;font-weight:600}
+  #overlay small{color:var(--dim);max-width:320px}
+  .spinner{width:26px;height:26px;border:2px solid var(--line);border-top-color:var(--accent);
+           border-radius:50%;animation:spin 1s linear infinite;margin-bottom:4px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  footer{
+    display:flex;gap:8px;padding:10px 14px;background:var(--panel);
+    border-top:1px solid var(--line);flex:none;padding-bottom:max(10px,env(safe-area-inset-bottom));
+  }
+  button,a.btn{
+    flex:1;appearance:none;border:1px solid var(--line);background:#1b2027;color:var(--fg);
+    padding:11px 8px;border-radius:10px;font:inherit;font-size:13px;cursor:pointer;
+    text-align:center;text-decoration:none;user-select:none;transition:background .15s,border-color .15s;
+  }
+  button:hover,a.btn:hover{background:#232a33;border-color:#33404d}
+  button:active,a.btn:active{transform:translateY(1px)}
+  @media (max-width:420px){ .meta{font-size:11px} }
+</style>
+</head>
+<body>
+<header>
+  <div class="dot" id="dot"></div>
+  <h1>Camarita <span id="state">conectando…</span></h1>
+  <div class="spacer"></div>
+  <div class="meta" id="meta">&nbsp;</div>
+</header>
+
+<main>
+  <img id="video" alt="stream" src="/stream">
+  <div id="overlay">
+    <div class="spinner"></div>
+    <strong id="ovtitle">Esperando la cámara</strong>
+    <small id="ovtext">Si está dormida, se engancha sola cuando despierte.</small>
+  </div>
+</main>
+
+<footer>
+  <button id="full">Pantalla completa</button>
+  <a class="btn" id="shot" href="/snapshot" download>Foto</a>
+  <button id="reload">Recargar</button>
+</footer>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const dot = $('dot'), state = $('state'), meta = $('meta');
+  const img = $('video'), overlay = $('overlay'), ovtitle = $('ovtitle'), ovtext = $('ovtext');
+
+  let lastFrameTs = 0;     // último frame visto por el navegador
+  let retry = 0, loading = false;
+
+  // ---- MJPEG con reconexión propia -------------------------------------
+  function connectStream() {
+    if (loading) return;
+    loading = true;
+    const bust = '?t=' + Date.now();
+    img.src = '/stream' + bust;
+  }
+  img.addEventListener('load', () => { retry = 0; lastFrameTs = Date.now(); hideOverlay(); });
+  img.addEventListener('error', () => {
+    loading = false;
+    showOverlay('Sin imagen', 'Reintentando en unos segundos…');
+    const wait = Math.min(15000, 1000 * 2 ** Math.min(retry++, 4));
+    setTimeout(connectStream, wait);
+  });
+  // El <img> de un MJPEG no dispara 'load' por frame: latimos con el WS.
+
+  function showOverlay(t, s) { overlay.classList.add('on'); ovtitle.textContent = t; ovtext.textContent = s; }
+  function hideOverlay() { overlay.classList.remove('on'); }
+
+  // ---- WebSocket de estado ---------------------------------------------
+  let ws = null, wsRetry = 0;
+  function connectWS() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    try { ws = new WebSocket(`${proto}://${location.host}/ws`); } catch { return retryWS(); }
+    ws.onopen = () => { wsRetry = 0; };
+    ws.onmessage = e => {
+      let s; try { s = JSON.parse(e.data); } catch { return; }
+      render(s);
+      if (s.up && s.age !== null && s.age < 3) {
+        hideOverlay();
+        loading = true;                 // el stream está llegando
+      } else if (!s.up) {
+        showOverlay('Cámara dormida', 'El servidor la busca; se reconecta cuando despierte.');
+        loading = false;
+      }
+    };
+    ws.onclose = retryWS;
+    ws.onerror = () => { try { ws.close(); } catch {} };
+  }
+  function retryWS() {
+    const wait = Math.min(10000, 700 * 2 ** Math.min(wsRetry++, 4));
+    setTimeout(connectWS, wait);
+  }
+
+  function fmtBytes(b) {
+    if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
+    if (b >= 1024) return (b / 1024).toFixed(0) + ' kB';
+    return b + ' B';
+  }
+
+  function render(s) {
+    const live = s.up && s.age !== null && s.age < 3;
+    dot.className = 'dot ' + (live ? 'ok' : s.up ? 'warn' : 'bad');
+    state.textContent = live ? 'en vivo' : s.up ? 'sin imagen' : 'cámara dormida';
+    const bits = [];
+    if (s.fps) bits.push(s.fps.toFixed(0) + ' fps');
+    if (s.w) bits.push(s.w + '×' + s.h);
+    if (s.kbps) bits.push(Math.round(s.kbps) + ' kB/s');
+    meta.innerHTML = bits.join(' · ') || '&nbsp;';
+    if (live) lastFrameTs = Date.now();
+  }
+
+  // ---- Botones ----------------------------------------------------------
+  $('full').onclick = () => {
+    const el = document.documentElement;
+    if (!document.fullscreenElement) (el.requestFullscreen || el.webkitRequestFullscreen || (()=>{})).call(el);
+    else (document.exitFullscreen || document.webkitExitFullscreen || (()=>{})).call(document);
+  };
+  $('reload').onclick = () => { loading = false; connectStream(); };
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && img.src.indexOf('/stream') === -1) connectStream();
+  });
+
+  // Si el último frame es viejo, avisa sin esperar al WS.
+  setInterval(() => {
+    if (!lastFrameTs) return;
+    const age = (Date.now() - lastFrameTs) / 1000;
+    if (age > 6 && !overlay.classList.contains('on')) {
+      showOverlay('Imagen congelada', 'El stream dejó de llegar; reconectando…');
+      loading = false;
+      connectStream();
+    }
+  }, 2000);
+
+  connectWS();
+})();
+</script>
+</body>
+</html>

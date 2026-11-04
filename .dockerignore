@@ -1,0 +1,7 @@
+.git
+.env
+CY365-wifi-camera-reverse-engineering
+*.md
+*.log
+*.jpg
+__pycache__

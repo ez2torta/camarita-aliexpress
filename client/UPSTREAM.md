@@ -20,6 +20,8 @@ el tuyo va en `.env`).
 | `--devmac`, `--video`, `--camsmode`, `--fmt`, `--onlycheck`, `--onlystream`, `--nocontrol` | flags de diagnostico usados durante la ingenieria inversa |
 | volcado crudo del canal 0 en `--debug` | el firmware no contestaba JSON; ver el hex fue lo que permitio descartar contrasena y framing |
 | `--auth user:pass` (HTTP Basic, opcional) | el stream no trae autenticacion propia; hace falta si el puerto sale de la LAN |
+| web propia en `web/index.html` + `/ws`, `/status`, `/healthz` | pagina para movil con estado en vivo (WebSocket minimo, sin dependencias) |
+| `broadcast()` separado de `pushJpeg()` | antes, cada visor nuevo contaba un frame falso e inflaba el fps |
 
 ## Como re-sincronizar con upstream
 

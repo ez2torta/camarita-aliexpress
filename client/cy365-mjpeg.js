@@ -18,7 +18,7 @@
  *
  * Usage:
  *   node cy365-mjpeg.js --did EEE-123456-ABCDE --pwd 6666 [--user admin] \
- *        [--cam-ip 192.168.1.50] [--http 8090] [--debug]
+ *        [--cam-ip 192.168.0.50] [--http 8090] [--debug]
  */
 
 const dgram = require('dgram');
@@ -125,7 +125,7 @@ function sendCtrl(obj) {
 
 // ---- video reassembly (carve JPEGs from chan-1 stream) -------------------
 let vbuf = Buffer.alloc(0);
-let latestJpeg = null, frameCount = 0;
+let latestJpeg = null, latestAt = 0, frameCount = 0, bytesTotal = 0;
 const clients = new Set();
 // Video frames on chan1 are: [32-byte "55 aa" header, JPEG length LE at offset 16] + JPEG.
 // Parse that framing (robust) rather than scanning for FF D8/FF D9 (false markers desync).
@@ -148,8 +148,12 @@ function feedVideo(data) {
   }
 }
 function pushJpeg(j) {
-  latestJpeg = j; frameCount++;
+  latestJpeg = j; latestAt = Date.now(); frameCount++; bytesTotal += j.length;
   if (frameCount === 1 || frameCount % 30 === 0) log(`[VIDEO] frame ${frameCount} (${j.length} bytes)`);
+  broadcast(j);
+}
+// reenvía un frame ya recibido (al conectar un visor nuevo, sin contarlo como nuevo)
+function broadcast(j) {
   for (const res of clients) { try { res.write(`--f\r\nContent-Type: image/jpeg\r\nContent-Length: ${j.length}\r\n\r\n`); res.write(j); res.write('\r\n'); } catch {} }
 }
 
@@ -285,17 +289,85 @@ sock.bind(() => {
 });
 
 // ---- HTTP MJPEG server ---------------------------------------------------
-const PAGE = `<!doctype html><meta charset=utf-8><title>CY365 ${DID}</title>
-<style>body{margin:0;background:#111;color:#ccc;font:14px system-ui;text-align:center}img{max-width:100%}h1{font-size:14px;font-weight:400;padding:8px;margin:0}</style>
-<h1>CY365 ${DID} — live MJPEG (appless)</h1><img src="/stream">`;
-http.createServer((req, res) => {
-  if (AUTH) {
-    const h = req.headers.authorization || '';
-    const ok = h.startsWith('Basic ') && Buffer.from(h.slice(6), 'base64').toString() === AUTH;
-    if (!ok) { res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="camarita"' }); res.end('auth required'); return; }
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+
+let INDEX = `<!doctype html><meta charset=utf-8><title>Camarita</title>
+<style>body{margin:0;background:#111}img{max-width:100%}</style><img src="/stream">`;
+try { INDEX = fs.readFileSync(path.join(__dirname, 'web', 'index.html'), 'utf8'); } catch { dbg('[HTTP] web/index.html no encontrado, uso la página mínima'); }
+
+// estado para la web (fps, kb/s, edad del último frame)
+let fps = 0, kbps = 0, lastCount = 0, lastBytes = 0, lastTick = Date.now();
+function status() {
+  return {
+    up: sessionUp,
+    frames: frameCount,
+    fps: Math.round(fps * 10) / 10,
+    kbps: Math.round(kbps),
+    bytes: bytesTotal,
+    age: latestAt ? Math.round((Date.now() - latestAt) / 100) / 10 : null,
+    clients: clients.size,
+    ts: Date.now(),
+  };
+}
+
+// WebSocket mínimo (RFC 6455), sin dependencias: solo hace falta mandar estado.
+const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
+const wss = new Set();
+function wsFrame(obj) {
+  const p = Buffer.from(JSON.stringify(obj));
+  const n = p.length;
+  let h;
+  if (n < 126) { h = Buffer.alloc(2); h[0] = 0x81; h[1] = n; }
+  else if (n < 65536) { h = Buffer.alloc(4); h[0] = 0x81; h[1] = 126; h.writeUInt16BE(n, 2); }
+  else { h = Buffer.alloc(10); h[0] = 0x81; h[1] = 127; h.writeBigUInt64BE(BigInt(n), 2); }
+  return Buffer.concat([h, p]);
+}
+function wsSend(sock, obj) { try { sock.write(wsFrame(obj)); } catch {} }
+
+function authorized(req) {
+  if (!AUTH) return true;
+  const h = req.headers.authorization || '';
+  return h.startsWith('Basic ') && Buffer.from(h.slice(6), 'base64').toString() === AUTH;
+}
+
+const server = http.createServer((req, res) => {
+  if (!authorized(req)) {
+    res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="camarita"' });
+    res.end('auth required');
+    return;
   }
-  if (req.url === '/' ) { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(PAGE); }
-  else if (req.url === '/snapshot') { if (!latestJpeg) { res.writeHead(503); res.end('no frame'); return; } res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': latestJpeg.length, 'Cache-Control': 'no-store' }); res.end(latestJpeg); }
-  else if (req.url === '/stream') { res.writeHead(200, { 'Content-Type': 'multipart/x-mixed-replace; boundary=f', 'Cache-Control': 'no-store', 'Connection': 'close' }); clients.add(res); if (latestJpeg) pushJpeg(latestJpeg); req.on('close', () => clients.delete(res)); }
+  const url = req.url.split('?')[0];
+  if (url === '/' || url === '/index.html') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(INDEX); }
+  else if (url === '/healthz') { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('ok'); }
+  else if (url === '/status') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(status())); }
+  else if (url === '/snapshot') { if (!latestJpeg) { res.writeHead(503); res.end('no frame'); return; } res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': latestJpeg.length, 'Cache-Control': 'no-store' }); res.end(latestJpeg); }
+  else if (url === '/stream') { res.writeHead(200, { 'Content-Type': 'multipart/x-mixed-replace; boundary=f', 'Cache-Control': 'no-store', 'Connection': 'close' }); clients.add(res); if (latestJpeg) broadcast(latestJpeg); req.on('close', () => clients.delete(res)); }
   else { res.writeHead(404); res.end(); }
-}).listen(HTTP_PORT, () => log(`[HTTP] http://0.0.0.0:${HTTP_PORT}/  (snapshot: /snapshot, mjpeg: /stream)`));
+});
+
+server.on('upgrade', (req, sock) => {
+  if (!authorized(req) || !req.headers['sec-websocket-key']) { sock.destroy(); return; }
+  const acc = crypto.createHash('sha1').update(req.headers['sec-websocket-key'] + WS_GUID).digest('base64');
+  sock.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
+    + `Sec-WebSocket-Accept: ${acc}\r\n\r\n`);
+  wss.add(sock);
+  const bye = () => wss.delete(sock);
+  sock.on('close', bye);
+  sock.on('error', bye);
+  sock.on('data', (b) => { if ((b[0] & 0x0f) === 0x8) sock.end(); }); // close del cliente
+  wsSend(sock, status());
+});
+
+server.listen(HTTP_PORT, () => log(`[HTTP] http://0.0.0.0:${HTTP_PORT}/  (web: /, snapshot: /snapshot, mjpeg: /stream, ws: /ws)`));
+
+// difunde el estado a las webs conectadas, una vez por segundo
+setInterval(() => {
+  const now = Date.now();
+  const dt = Math.max(0.001, (now - lastTick) / 1000);
+  fps = (frameCount - lastCount) / dt;
+  kbps = (bytesTotal - lastBytes) / dt / 1024;
+  lastTick = now; lastCount = frameCount; lastBytes = bytesTotal;
+  if (wss.size) { const st = status(); for (const s of wss) wsSend(s, st); }
+}, 1000);

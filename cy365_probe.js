@@ -7,7 +7,7 @@
  * CUALQUIER respuesta de la camara decodificada. Sirve para saber si la camara
  * habla el protocolo y con que clave.
  *
- * Uso:  node cy365_probe.js [--ip 192.168.1.26] [--segundos 120]
+ * Uso:  node cy365_probe.js [--ip 192.168.0.26] [--segundos 120]
  */
 
 const dgram = require('dgram');
@@ -17,7 +17,7 @@ const arg = (n, d) => {
   const i = process.argv.indexOf('--' + n);
   return i >= 0 && i + 1 < process.argv.length ? process.argv[i + 1] : d;
 };
-const CAM_IP = arg('ip', '192.168.1.26');
+const CAM_IP = arg('ip', '192.168.0.26');
 const SEGUNDOS = parseInt(arg('segundos', '120'), 10);
 
 const TABLE = Buffer.from(
@@ -57,7 +57,7 @@ sock.bind(() => {
   sock.setBroadcast(true);
   const destinos = [
     { address: '255.255.255.255', port: 32108 },
-    { address: subredBroadcast() || '192.168.1.255', port: 32108 },
+    { address: subredBroadcast() || '192.168.0.255', port: 32108 },
     { address: CAM_IP, port: 32108 },
   ].filter(d => d.address);
 
