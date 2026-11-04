@@ -1,0 +1,14 @@
+# Credenciales reales (no se sube).
+.env
+config.sh
+
+# Clon de referencia del repo original: se ignora porque el cliente que se
+# empaqueta vive en client/ (parcheado). Ver client/UPSTREAM.md.
+CY365-wifi-camera-reverse-engineering/
+
+# Basura
+*.log
+*.jpg
+*.jpeg
+__pycache__/
+.DS_Store

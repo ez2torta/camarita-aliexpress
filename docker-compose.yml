@@ -1,0 +1,31 @@
+# Camarita en ZimaOS (o cualquier Docker sobre Linux).
+#
+# IMPORTANTE: network_mode: host no es un capricho.
+#   1. El cliente busca la camara con un broadcast UDP (255.255.255.255 y la
+#      broadcast de la subred) al puerto 32108.
+#   2. La camara responde "punchando" de vuelta al puerto UDP de origen, que es
+#      efimero. Con la red bridge de Docker ese paquete no llega al contenedor.
+# Con host networking el contenedor usa la red del NAS tal cual. Funciona en
+# Linux (ZimaOS, Proxmox, Raspberry Pi...). NO en Docker Desktop de macOS.
+#
+# Uso:
+#   cp .env.example .env     # y rellena DID / contrasena
+#   docker compose up -d --build
+#   docker compose logs -f
+
+services:
+  camarita:
+    build: .
+    image: camarita:latest
+    container_name: camarita
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
